@@ -149,15 +149,6 @@ export default function CheckoutClient({
           </div>
         ) : null}
 
-        <input
-          type="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="teu@email.com"
-          className="input"
-          autoComplete="email"
-        />
-
         <div className="phoneRow">
           <select
             className="input country"
@@ -179,6 +170,15 @@ export default function CheckoutClient({
             autoComplete="tel"
           />
         </div>
+
+        <input
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          placeholder="teu@email.com"
+          className="input"
+          autoComplete="email"
+        />
 
         {clientSecret ? (
           <Elements
