@@ -3,24 +3,31 @@ import { NextResponse } from "next/server";
 import { getOfferById } from "@/lib/offers";
 import { getStripeClient } from "@/lib/stripe";
 
+type CheckoutPayload = {
+  email?: string;
+  offerId?: string;
+  phoneCountry?: string;
+  phoneNumber?: string;
+  paymentIntentId?: string;
+};
+
+function normalizeContact(payload: CheckoutPayload) {
+  const email = payload.email?.trim().toLowerCase();
+  const phoneCountry = payload.phoneCountry?.trim();
+  const phoneNumber = payload.phoneNumber?.replace(/\D/g, "").trim();
+  const whatsappE164 =
+    phoneCountry && phoneNumber ? `${phoneCountry}${phoneNumber}` : "";
+
+  return { email, phoneCountry, phoneNumber, whatsappE164 };
+}
+
 export async function POST(request: Request) {
   try {
     const stripe = getStripeClient();
-    const payload = (await request
-      .json()
-      .catch(() => null)) as
-      | {
-          email?: string;
-          offerId?: string;
-          phoneCountry?: string;
-          phoneNumber?: string;
-        }
-      | null;
-    const email = payload?.email?.trim().toLowerCase();
-    const phoneCountry = payload?.phoneCountry?.trim();
-    const phoneNumber = payload?.phoneNumber?.replace(/\D/g, "").trim();
-    const whatsappE164 =
-      phoneCountry && phoneNumber ? `${phoneCountry}${phoneNumber}` : "";
+    const payload = (await request.json().catch(() => null)) as CheckoutPayload | null;
+    const { email, phoneCountry, phoneNumber, whatsappE164 } = normalizeContact(
+      payload || {},
+    );
     const offer = getOfferById(payload?.offerId);
     const coproducerAccountId = process.env.COPRODUCER_ACCOUNT_ID;
     const ownerPercentRaw = process.env.SPLIT_OWNER_PERCENT ?? "70";
@@ -29,13 +36,6 @@ export async function POST(request: Request) {
     if (!offer?.stripePriceId) {
       return NextResponse.json(
         { error: "Oferta invalida ou sem stripePriceId." },
-        { status: 400 },
-      );
-    }
-
-    if (!email || !phoneCountry || !phoneNumber || phoneNumber.length < 8) {
-      return NextResponse.json(
-        { error: "Email e WhatsApp (pais + numero) sao obrigatorios." },
         { status: 400 },
       );
     }
@@ -65,12 +65,12 @@ export async function POST(request: Request) {
       amount: offer.amountInCents,
       currency: "brl",
       automatic_payment_methods: { enabled: true },
-      receipt_email: email,
+      receipt_email: email || undefined,
       metadata: {
         buyer_email: email || "",
-        buyer_phone_country: phoneCountry,
-        buyer_phone_number: phoneNumber,
-        buyer_whatsapp_e164: whatsappE164,
+        buyer_phone_country: phoneCountry || "",
+        buyer_phone_number: phoneNumber || "",
+        buyer_whatsapp_e164: whatsappE164 || "",
         offer_id: offer.id,
         offer_name: offer.name,
         webhook_plan: offer.webhookPlan || offer.id,
@@ -138,6 +138,55 @@ export async function POST(request: Request) {
     console.error("Erro Stripe payment intent:", error);
     return NextResponse.json(
       { error: "Nao foi possivel iniciar o pagamento." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const stripe = getStripeClient();
+    const payload = (await request.json().catch(() => null)) as CheckoutPayload | null;
+    const offer = getOfferById(payload?.offerId);
+    const paymentIntentId = payload?.paymentIntentId?.trim();
+    const { email, phoneCountry, phoneNumber, whatsappE164 } = normalizeContact(
+      payload || {},
+    );
+
+    if (!paymentIntentId || !offer?.stripePriceId) {
+      return NextResponse.json(
+        { error: "paymentIntentId e oferta sao obrigatorios." },
+        { status: 400 },
+      );
+    }
+
+    if (!email || !phoneCountry || !phoneNumber || phoneNumber.length < 8) {
+      return NextResponse.json(
+        { error: "Email e WhatsApp (pais + numero) sao obrigatorios." },
+        { status: 400 },
+      );
+    }
+
+    await stripe.paymentIntents.update(paymentIntentId, {
+      receipt_email: email,
+      metadata: {
+        buyer_email: email,
+        buyer_phone_country: phoneCountry,
+        buyer_phone_number: phoneNumber,
+        buyer_whatsapp_e164: whatsappE164,
+        offer_id: offer.id,
+        offer_name: offer.name,
+        webhook_plan: offer.webhookPlan || offer.id,
+        tool_product_id: offer.toolProductId,
+        tool_access_tag: offer.toolAccessTag,
+      },
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("Erro ao atualizar payment intent:", error);
+    return NextResponse.json(
+      { error: "Nao foi possivel validar dados do pagamento." },
       { status: 500 },
     );
   }

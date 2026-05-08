@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Elements,
   PaymentElement,
@@ -42,23 +42,13 @@ export default function CheckoutClient({
   const [phoneCountry, setPhoneCountry] = useState("+55");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [clientSecret, setClientSecret] = useState("");
+  const [paymentIntentId, setPaymentIntentId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const startPayment = async () => {
+  const initializePayment = async () => {
     if (!selectedOffer) {
       setError("Nenhuma oferta disponivel.");
-      return;
-    }
-
-    if (!email.trim()) {
-      setError("Preenche o email para receber o acesso.");
-      return;
-    }
-
-    const digitsOnly = phoneNumber.replace(/\D/g, "");
-    if (!phoneCountry || digitsOnly.length < 8) {
-      setError("Preenche pais e numero de WhatsApp validos.");
       return;
     }
 
@@ -72,10 +62,7 @@ export default function CheckoutClient({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          email,
           offerId: selectedOffer.id,
-          phoneCountry,
-          phoneNumber: digitsOnly,
         }),
       });
 
@@ -83,13 +70,17 @@ export default function CheckoutClient({
         throw new Error("Falha ao iniciar pagamento na Stripe.");
       }
 
-      const data = (await response.json()) as { clientSecret?: string };
+      const data = (await response.json()) as {
+        clientSecret?: string;
+        paymentIntentId?: string;
+      };
 
-      if (!data.clientSecret) {
+      if (!data.clientSecret || !data.paymentIntentId) {
         throw new Error("Nao foi possivel obter dados de pagamento.");
       }
 
       setClientSecret(data.clientSecret);
+      setPaymentIntentId(data.paymentIntentId);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Erro inesperado no checkout.";
@@ -98,6 +89,13 @@ export default function CheckoutClient({
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    // We intentionally bootstrap a PaymentIntent when the offer changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    initializePayment();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offerId]);
 
   if (!publishableKey) {
     return (
@@ -125,8 +123,7 @@ export default function CheckoutClient({
         <p className="kicker">Checkout</p>
         <h1>Finalizar compra</h1>
         <p className="description">
-          Preenche os dados, escolhe o plano e clica para abrir os campos do
-          cartao aqui na pagina.
+          Preenche os dados, escolhe o plano e paga aqui mesmo no checkout.
         </p>
         <select
           className="input"
@@ -134,6 +131,7 @@ export default function CheckoutClient({
           onChange={(event) => {
             setOfferId(event.target.value);
             setClientSecret("");
+            setPaymentIntentId("");
             setError("");
           }}
         >
@@ -182,11 +180,7 @@ export default function CheckoutClient({
           />
         </div>
 
-        {!clientSecret ? (
-          <button className="button" onClick={startPayment} disabled={isLoading}>
-            {isLoading ? "A preparar pagamento..." : "Continuar para pagamento"}
-          </button>
-        ) : (
+        {clientSecret ? (
           <Elements
             stripe={stripePromise}
             options={{
@@ -194,8 +188,18 @@ export default function CheckoutClient({
               appearance: { theme: "night" },
             }}
           >
-            <PaymentForm />
+            <PaymentForm
+              paymentIntentId={paymentIntentId}
+              offerId={selectedOffer?.id || ""}
+              email={email}
+              phoneCountry={phoneCountry}
+              phoneNumber={phoneNumber}
+            />
           </Elements>
+        ) : (
+          <button className="button" disabled>
+            {isLoading ? "A preparar campos do cartao..." : "A carregar checkout..."}
+          </button>
         )}
 
         {error ? <p className="error">{error}</p> : null}
@@ -204,7 +208,21 @@ export default function CheckoutClient({
   );
 }
 
-function PaymentForm() {
+type PaymentFormProps = {
+  paymentIntentId: string;
+  offerId: string;
+  email: string;
+  phoneCountry: string;
+  phoneNumber: string;
+};
+
+function PaymentForm({
+  paymentIntentId,
+  offerId,
+  email,
+  phoneCountry,
+  phoneNumber,
+}: PaymentFormProps) {
   const stripe = useStripe();
   const elements = useElements();
   const [error, setError] = useState("");
@@ -219,6 +237,33 @@ function PaymentForm() {
     try {
       setIsSubmitting(true);
       setError("");
+
+      const digitsOnly = phoneNumber.replace(/\D/g, "");
+      if (!email.trim() || !phoneCountry || digitsOnly.length < 8) {
+        setError("Preenche email e WhatsApp validos antes de pagar.");
+        return;
+      }
+
+      const syncResponse = await fetch("/api/checkout", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          paymentIntentId,
+          offerId,
+          email,
+          phoneCountry,
+          phoneNumber: digitsOnly,
+        }),
+      });
+
+      if (!syncResponse.ok) {
+        const syncData = (await syncResponse.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(syncData?.error || "Falha ao validar dados do comprador.");
+      }
 
       const result = await stripe.confirmPayment({
         elements,
