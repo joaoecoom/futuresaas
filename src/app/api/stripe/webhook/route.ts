@@ -1,10 +1,11 @@
 import type Stripe from "stripe";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
-import { stripe } from "@/lib/stripe";
+import { getStripeClient } from "@/lib/stripe";
 import { unlockToolAccess } from "@/lib/tool-access";
 
 export async function POST(request: Request) {
+  const stripe = getStripeClient();
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
   if (!webhookSecret) {

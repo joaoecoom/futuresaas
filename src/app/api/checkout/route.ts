@@ -1,10 +1,11 @@
 import type Stripe from "stripe";
 import { NextResponse } from "next/server";
 import { getOfferById } from "@/lib/offers";
-import { stripe } from "@/lib/stripe";
+import { getStripeClient } from "@/lib/stripe";
 
 export async function POST(request: Request) {
   try {
+    const stripe = getStripeClient();
     const payload = (await request
       .json()
       .catch(() => null)) as
