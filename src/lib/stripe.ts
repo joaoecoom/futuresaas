@@ -7,5 +7,5 @@ if (!secretKey) {
 }
 
 export const stripe = new Stripe(secretKey, {
-  apiVersion: "2026-01-28.clover",
+  apiVersion: "2026-04-22.dahlia",
 });
