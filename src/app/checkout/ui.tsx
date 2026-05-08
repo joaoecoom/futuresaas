@@ -32,9 +32,10 @@ export default function CheckoutClient({
     { code: "+34", label: "Espanha (+34)" },
   ];
 
+  const [offerId, setOfferId] = useState(selectedOfferId || offers[0]?.id || "");
   const selectedOffer = useMemo(
-    () => offers.find((offer) => offer.id === selectedOfferId) || offers[0],
-    [offers, selectedOfferId],
+    () => offers.find((offer) => offer.id === offerId) || offers[0],
+    [offers, offerId],
   );
 
   const [email, setEmail] = useState("");
@@ -124,8 +125,24 @@ export default function CheckoutClient({
         <p className="kicker">Checkout</p>
         <h1>Finalizar compra</h1>
         <p className="description">
-          Clique para abrir o checkout hospedado pela Stripe.
+          Preenche os dados, escolhe o plano e clica para abrir os campos do
+          cartao aqui na pagina.
         </p>
+        <select
+          className="input"
+          value={offerId}
+          onChange={(event) => {
+            setOfferId(event.target.value);
+            setClientSecret("");
+            setError("");
+          }}
+        >
+          {offers.map((offer) => (
+            <option key={offer.id} value={offer.id}>
+              {offer.name} - {formatPriceBRL(offer.amountInCents)}
+            </option>
+          ))}
+        </select>
         {selectedOffer ? (
           <div className="offerSummary">
             <strong>{selectedOffer.name}</strong>
