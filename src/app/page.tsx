@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -9,6 +9,9 @@ type QuizStep = {
   subtitle?: string;
   options: string[];
 };
+
+/** Botao de checkout na VSL so depois deste tempo de reproducao (mm:ss). */
+const VSL_UNLOCK_AT_SECONDS = 4 * 60 + 18;
 
 const quizSteps: QuizStep[] = [
   {
@@ -125,12 +128,39 @@ const quizSteps: QuizStep[] = [
 export default function Home() {
   const [step, setStep] = useState(-1);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const resultStep = quizSteps.length;
+  const vslStep = quizSteps.length + 1;
   const currentStep = quizSteps[step];
   const progress = useMemo(() => {
-    const total = quizSteps.length + 1;
+    const total = quizSteps.length + 2;
     const current = Math.max(0, step + 1);
     return Math.min(100, Math.round((current / total) * 100));
   }, [step]);
+
+  const vslUrl =
+    process.env.NEXT_PUBLIC_VSL_URL?.trim() || "/vsl.mp4";
+
+  const isDirectVideoSrc = (url: string) => {
+    const path = url.split(/[?#]/)[0]?.toLowerCase() ?? "";
+    return /\.(mp4|webm|ogg|m4v)$/i.test(path);
+  };
+
+  const [vslCheckoutUnlocked, setVslCheckoutUnlocked] = useState(false);
+
+  const maybeUnlockVslCheckout = (video: HTMLVideoElement) => {
+    if (video.currentTime >= VSL_UNLOCK_AT_SECONDS) {
+      setVslCheckoutUnlocked(true);
+    }
+  };
+
+  const vslVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [vslVideoPlaying, setVslVideoPlaying] = useState(false);
+
+  const toggleVslPlayback = () => {
+    const el = vslVideoRef.current;
+    if (!el) return;
+    void (el.paused ? el.play() : el.pause());
+  };
 
   const goNext = (index: number) => {
     setSelectedIndex(index);
@@ -140,14 +170,25 @@ export default function Home() {
     }, 180);
   };
 
-  const maxStep = quizSteps.length;
+  const maxStep = vslStep;
   const goToStep = (nextStep: number) => {
     const boundedStep = Math.max(-1, Math.min(maxStep, nextStep));
     setSelectedIndex(null);
+    if (boundedStep === vslStep) {
+      setVslCheckoutUnlocked(!isDirectVideoSrc(vslUrl));
+      setVslVideoPlaying(false);
+    }
     setStep(boundedStep);
   };
 
-  const isFinalStep = step >= quizSteps.length;
+  const enterVslStep = () => {
+    setVslCheckoutUnlocked(!isDirectVideoSrc(vslUrl));
+    setVslVideoPlaying(false);
+    setStep(vslStep);
+  };
+
+  const isResultStep = step === resultStep;
+  const isVslStep = step === vslStep;
 
   const getOptionEmoji = (stepIndex: number, optionIndex: number) => {
     if (stepIndex === 1 && optionIndex === 0) return "👱";
@@ -222,7 +263,8 @@ export default function Home() {
             Etapa {index + 1}
           </option>
         ))}
-        <option value={quizSteps.length}>Resultado final</option>
+        <option value={resultStep}>Resultado final</option>
+        <option value={vslStep}>VSL</option>
       </select>
       <button
         className="quizDevBtn"
@@ -274,13 +316,13 @@ export default function Home() {
     );
   }
 
-  if (isFinalStep) {
+  if (isResultStep) {
     return (
       <main className="quizRoot">
         <div className="quizCard">
           {devNav}
           <div className="quizProgress">
-            <div className="quizProgressFill" style={{ width: "100%" }} />
+            <div className="quizProgressFill" style={{ width: `${progress}%` }} />
           </div>
           <div className="quizAlert">
             Seu acesso a Maquina de Mensalidades foi liberado por tempo
@@ -369,9 +411,98 @@ export default function Home() {
             <strong>SISTEMA MAQUINA DE MENSALIDADES</strong> clique no botao abaixo
             e <span>assista o tutorial de acesso</span>
           </p>
-          <Link className="quizCta" href="/checkout?offer=front-147">
-            DESBLOQUEAR ACESSO
-          </Link>
+          <button className="quizCta" onClick={enterVslStep}>
+            CONTINUAR
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  if (isVslStep) {
+    return (
+      <main className="quizRoot">
+        <div className="quizCard">
+          {devNav}
+          <div className="quizProgress">
+            <div className="quizProgressFill" style={{ width: "100%" }} />
+          </div>
+          <div className="quizVslHead">
+            <h2 className="quizVslTitle">Assista a apresentacao completa</h2>
+            <p className="quizVslScarcity">
+              Oferta por tempo limitado — vagas reduzidas nesta rodada
+            </p>
+            <p className="quizVslSubtitle">
+              Assista agora: este acesso promocional pode ser encerrado sem aviso.
+              Veja o video e descubra como aplicar a{" "}
+              <span className="quizInlineHighlight">Maquina de Mensalidades</span>{" "}
+              ao seu caso antes que fechemos esta janela.
+            </p>
+          </div>
+          <div className="quizVslWrap">
+            {isDirectVideoSrc(vslUrl) ? (
+              <>
+                <video
+                  ref={vslVideoRef}
+                  className="quizVslVideo"
+                  src={vslUrl}
+                  playsInline
+                  preload="metadata"
+                  disablePictureInPicture
+                  onClick={toggleVslPlayback}
+                  onPlay={() => setVslVideoPlaying(true)}
+                  onPause={() => setVslVideoPlaying(false)}
+                  onTimeUpdate={(event) =>
+                    maybeUnlockVslCheckout(event.currentTarget)
+                  }
+                  onSeeked={(event) =>
+                    maybeUnlockVslCheckout(event.currentTarget)
+                  }
+                >
+                  Seu navegador nao suporta reproducao de video HTML5.
+                </video>
+                {!vslVideoPlaying ? (
+                  <button
+                    type="button"
+                    className="quizVslPlayOverlay"
+                    aria-label="Aperte play para continuar"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleVslPlayback();
+                    }}
+                  >
+                    <span className="quizVslPlayPulseWrap">
+                      <Image
+                        src="/vsl-play-overlay.png"
+                        alt=""
+                        width={960}
+                        height={540}
+                        className="quizVslPlayImage"
+                        priority
+                      />
+                    </span>
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <iframe
+                className="quizVslFrame"
+                src={vslUrl}
+                title="Video de vendas"
+                allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                allowFullScreen
+              />
+            )}
+          </div>
+          {vslCheckoutUnlocked ? (
+            <Link className="quizCta" href="/checkout?offer=front-147">
+              DESBLOQUEAR ACESSO
+            </Link>
+          ) : (
+            <p className="quizVslCtaHint">
+              Assista ate <strong>04:18</strong> para desbloquear o botao abaixo.
+            </p>
+          )}
         </div>
       </main>
     );
