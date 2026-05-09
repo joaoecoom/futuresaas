@@ -32,7 +32,7 @@ function parseOffersFromEnv(): FunnelOffer[] {
 const fallbackOffers: FunnelOffer[] = [
   {
     id: "entrada-147",
-    name: "Plano Entrada",
+    name: "Front - Acesso à Ferramenta",
     description: "Acesso inicial da ferramenta",
     amountInCents: 14700,
     currency: "brl",
@@ -46,6 +46,48 @@ const fallbackOffers: FunnelOffer[] = [
 export const funnelOffers = parseOffersFromEnv().length
   ? parseOffersFromEnv()
   : fallbackOffers;
+
+/** Substitui copy antiga no checkout. */
+function normalizeCheckoutOfferDisplay(offer: FunnelOffer): FunnelOffer {
+  const name = offer.name.replace(/Acesso App/gi, "Acesso à Ferramenta");
+  return name === offer.name ? offer : { ...offer, name };
+}
+
+/**
+ * Ofertas mostradas no checkout low ticket (resto do catálogo fica para upsell).
+ * CHECKOUT_OFFER_IDS=id1,id2 (opcional). Por defeito: front-147 ou entrada-147.
+ */
+export function getCheckoutOffers(): FunnelOffer[] {
+  const all = funnelOffers;
+  const envRaw = process.env.CHECKOUT_OFFER_IDS;
+  let picked: FunnelOffer[] = [];
+
+  if (envRaw?.trim()) {
+    const ids = new Set(
+      envRaw.split(",").map((s) => s.trim()).filter(Boolean),
+    );
+    picked = all.filter((o) => ids.has(o.id));
+  }
+
+  if (!picked.length) {
+    const preferred = ["front-147", "entrada-147"];
+    for (const id of preferred) {
+      const o = all.find((x) => x.id === id);
+      if (o) {
+        picked = [o];
+        break;
+      }
+    }
+  }
+
+  if (!picked.length && all.length) {
+    picked = [all[0]];
+  }
+
+  return picked.map(normalizeCheckoutOfferDisplay);
+}
+
+export const checkoutOffers = getCheckoutOffers();
 
 export function getOfferById(id?: string | null) {
   if (!id) return null;

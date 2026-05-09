@@ -13,6 +13,17 @@ type QuizStep = {
 /** Botao de checkout na VSL so depois deste tempo de reproducao (mm:ss). */
 const VSL_UNLOCK_AT_SECONDS = 4 * 60 + 18;
 
+/**
+ * Barra visual inferior: mapeia tempo real para progresso "rapido no inicio,
+ * lento no fim" (sem interacao; so display).
+ */
+const VSL_UI_PROGRESS_CURVE = 2.75;
+
+function vslVisualPercentFromReal(real01: number): number {
+  const t = Math.min(1, Math.max(0, real01));
+  return (1 - Math.pow(1 - t, VSL_UI_PROGRESS_CURVE)) * 100;
+}
+
 const quizSteps: QuizStep[] = [
   {
     title:
@@ -155,6 +166,20 @@ export default function Home() {
 
   const vslVideoRef = useRef<HTMLVideoElement | null>(null);
   const [vslVideoPlaying, setVslVideoPlaying] = useState(false);
+  const [vslUiProgressPct, setVslUiProgressPct] = useState(0);
+
+  const syncVslUiProgress = (video: HTMLVideoElement) => {
+    const d = video.duration;
+    if (!Number.isFinite(d) || d <= 0) {
+      setVslUiProgressPct(0);
+      return;
+    }
+    if (video.ended) {
+      setVslUiProgressPct(100);
+      return;
+    }
+    setVslUiProgressPct(vslVisualPercentFromReal(video.currentTime / d));
+  };
 
   const toggleVslPlayback = () => {
     const el = vslVideoRef.current;
@@ -170,9 +195,22 @@ export default function Home() {
     }, 180);
   };
 
+  const maxStep = vslStep;
+  const goToStep = (nextStep: number) => {
+    const boundedStep = Math.max(-1, Math.min(maxStep, nextStep));
+    setSelectedIndex(null);
+    if (boundedStep === vslStep) {
+      setVslCheckoutUnlocked(!isDirectVideoSrc(vslUrl));
+      setVslVideoPlaying(false);
+      setVslUiProgressPct(0);
+    }
+    setStep(boundedStep);
+  };
+
   const enterVslStep = () => {
     setVslCheckoutUnlocked(!isDirectVideoSrc(vslUrl));
     setVslVideoPlaying(false);
+    setVslUiProgressPct(0);
     setStep(vslStep);
   };
 
@@ -232,10 +270,47 @@ export default function Home() {
     return null;
   };
 
+  const devNav = (
+    <div className="quizDevNav">
+      <button
+        type="button"
+        className="quizDevBtn"
+        onClick={() => goToStep(step - 1)}
+        disabled={step <= -1}
+      >
+        ← Etapa anterior
+      </button>
+      <select
+        className="quizDevSelect"
+        value={step}
+        onChange={(event) => goToStep(Number(event.target.value))}
+        aria-label="Ir para etapa"
+      >
+        <option value={-1}>Intro</option>
+        {quizSteps.map((_, index) => (
+          <option key={index} value={index}>
+            Etapa {index + 1}
+          </option>
+        ))}
+        <option value={resultStep}>Resultado final</option>
+        <option value={vslStep}>VSL</option>
+      </select>
+      <button
+        type="button"
+        className="quizDevBtn"
+        onClick={() => goToStep(step + 1)}
+        disabled={step >= maxStep}
+      >
+        Proxima etapa →
+      </button>
+    </div>
+  );
+
   if (step === -1) {
     return (
       <main className="quizRoot">
         <div className="quizCard quizCardIntro">
+          {devNav}
           <div className="quizProgress">
             <div className="quizProgressFill" style={{ width: `${progress}%` }} />
           </div>
@@ -275,6 +350,7 @@ export default function Home() {
     return (
       <main className="quizRoot">
         <div className="quizCard">
+          {devNav}
           <div className="quizProgress">
             <div className="quizProgressFill" style={{ width: `${progress}%` }} />
           </div>
@@ -377,6 +453,7 @@ export default function Home() {
     return (
       <main className="quizRoot">
         <div className="quizCard">
+          {devNav}
           <div className="quizProgress">
             <div className="quizProgressFill" style={{ width: "100%" }} />
           </div>
@@ -405,15 +482,33 @@ export default function Home() {
                   onClick={toggleVslPlayback}
                   onPlay={() => setVslVideoPlaying(true)}
                   onPause={() => setVslVideoPlaying(false)}
-                  onTimeUpdate={(event) =>
-                    maybeUnlockVslCheckout(event.currentTarget)
+                  onLoadedMetadata={(event) =>
+                    syncVslUiProgress(event.currentTarget)
                   }
-                  onSeeked={(event) =>
-                    maybeUnlockVslCheckout(event.currentTarget)
-                  }
+                  onTimeUpdate={(event) => {
+                    const v = event.currentTarget;
+                    maybeUnlockVslCheckout(v);
+                    syncVslUiProgress(v);
+                  }}
+                  onSeeked={(event) => {
+                    const v = event.currentTarget;
+                    maybeUnlockVslCheckout(v);
+                    syncVslUiProgress(v);
+                  }}
+                  onEnded={(event) => {
+                    const v = event.currentTarget;
+                    maybeUnlockVslCheckout(v);
+                    setVslUiProgressPct(100);
+                  }}
                 >
                   Seu navegador nao suporta reproducao de video HTML5.
                 </video>
+                <div className="quizVslProgressShell" aria-hidden="true">
+                  <div
+                    className="quizVslProgressFillUi"
+                    style={{ width: `${vslUiProgressPct}%` }}
+                  />
+                </div>
                 {!vslVideoPlaying ? (
                   <button
                     type="button"
@@ -464,6 +559,7 @@ export default function Home() {
   return (
     <main className="quizRoot">
       <div className="quizCard">
+        {devNav}
         <div className="quizTopBar">
           <button className="quizBack" onClick={() => setStep((s) => s - 1)}>
             ←

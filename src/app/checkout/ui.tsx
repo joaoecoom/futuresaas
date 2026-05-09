@@ -1,19 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  Elements,
-  PaymentElement,
-  useElements,
-  useStripe,
-} from "@stripe/react-stripe-js";
+import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
-import Image from "next/image";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import CheckoutHeroBanner from "@/components/checkout/CheckoutHeroBanner";
+import CheckoutPaymentForm from "@/components/checkout/CheckoutPaymentForm";
+import OfferSummary from "@/components/checkout/OfferSummary";
+import SecurePaymentNotice from "@/components/checkout/SecurePaymentNotice";
+import SocialProofBox from "@/components/checkout/SocialProofBox";
+import TrustBadges from "@/components/checkout/TrustBadges";
+import UrgencyStrip from "@/components/checkout/UrgencyStrip";
+import { checkoutMarketingDefaults } from "@/lib/checkout-marketing";
+import {
+  buildCheckoutTrackingBase,
+  trackCheckoutEvent,
+  type CheckoutTrackPayload,
+} from "@/lib/checkout-tracking";
 import { formatPriceBRL, type FunnelOffer } from "@/lib/offers";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "",
 );
+
+const marketing = checkoutMarketingDefaults;
 
 type CheckoutClientProps = {
   offers: FunnelOffer[];
@@ -25,6 +35,9 @@ export default function CheckoutClient({
   selectedOfferId,
 }: CheckoutClientProps) {
   const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+  const searchParams = useSearchParams();
+  const startedSent = useRef(false);
+
   const phoneCountries = [
     { code: "+55", label: "Brasil (+55)" },
     { code: "+351", label: "Portugal (+351)" },
@@ -38,6 +51,11 @@ export default function CheckoutClient({
     [offers, offerId],
   );
 
+  const trackingBase: CheckoutTrackPayload = useMemo(
+    () => buildCheckoutTrackingBase(searchParams, selectedOffer ?? null),
+    [searchParams, selectedOffer],
+  );
+
   const [email, setEmail] = useState("");
   const [phoneCountry, setPhoneCountry] = useState("+55");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -46,9 +64,28 @@ export default function CheckoutClient({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    trackCheckoutEvent(
+      "checkout_viewed",
+      buildCheckoutTrackingBase(searchParams, selectedOffer ?? null),
+    );
+    // Intentionally só na primeira montagem da página de checkout.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (clientSecret && !startedSent.current) {
+      startedSent.current = true;
+      trackCheckoutEvent("checkout_started", trackingBase);
+    }
+    if (!clientSecret) {
+      startedSent.current = false;
+    }
+  }, [clientSecret, trackingBase]);
+
   const initializePayment = async () => {
     if (!selectedOffer) {
-      setError("Nenhuma oferta disponivel.");
+      setError("Nenhuma oferta disponível.");
       return;
     }
 
@@ -76,7 +113,7 @@ export default function CheckoutClient({
       };
 
       if (!data.clientSecret || !data.paymentIntentId) {
-        throw new Error("Nao foi possivel obter dados de pagamento.");
+        throw new Error("Não foi possível obter dados de pagamento.");
       }
 
       setClientSecret(data.clientSecret);
@@ -91,7 +128,6 @@ export default function CheckoutClient({
   };
 
   useEffect(() => {
-    // We intentionally bootstrap a PaymentIntent when the offer changes.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     initializePayment();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,194 +135,168 @@ export default function CheckoutClient({
 
   if (!publishableKey) {
     return (
-      <main className="container">
-        <section className="card">
-          <p className="error">
-            Falta definir NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY no ambiente.
-          </p>
-        </section>
+      <main className="checkoutRoot">
+        <div className="checkoutInner">
+          <section className="checkoutCard checkoutCardError">
+            <p className="error">
+              Falta definir NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY no ambiente.
+            </p>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  if (!selectedOffer) {
+    return (
+      <main className="checkoutRoot">
+        <div className="checkoutInner">
+          <section className="checkoutCard checkoutCardError">
+            <p className="error">Nenhuma oferta configurada.</p>
+          </section>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="container">
-      <section className="card">
-        <Image
-          src="/logo-future-saas.png"
-          alt="Future SaaS logo"
-          width={420}
-          height={180}
-          className="brandLogo"
+    <main className="checkoutRoot">
+      <div className="checkoutInner">
+        <CheckoutHeroBanner
+          src={marketing.bannerSrc}
+          alt={marketing.bannerAlt}
           priority
         />
-        <p className="kicker">Checkout</p>
-        <h1>Finalizar compra</h1>
-        <p className="description">
-          Preenche os dados, escolhe o plano e paga aqui mesmo no checkout.
-        </p>
-        <select
-          className="input"
-          value={offerId}
-          onChange={(event) => {
-            setOfferId(event.target.value);
-            setClientSecret("");
-            setPaymentIntentId("");
-            setError("");
-          }}
-        >
-          {offers.map((offer) => (
-            <option key={offer.id} value={offer.id}>
-              {offer.name} - {formatPriceBRL(offer.amountInCents)}
-            </option>
-          ))}
-        </select>
-        {selectedOffer ? (
-          <div className="offerSummary">
-            <strong>{selectedOffer.name}</strong>
-            <span>{selectedOffer.description}</span>
-            <span>{formatPriceBRL(selectedOffer.amountInCents)}</span>
-          </div>
-        ) : null}
 
-        <div className="phoneRow">
-          <select
-            className="input country"
-            value={phoneCountry}
-            onChange={(event) => setPhoneCountry(event.target.value)}
-          >
-            {phoneCountries.map((country) => (
-              <option key={country.code} value={country.code}>
-                {country.label}
-              </option>
-            ))}
-          </select>
-          <input
-            type="tel"
-            value={phoneNumber}
-            onChange={(event) => setPhoneNumber(event.target.value)}
-            placeholder="Numero WhatsApp"
-            className="input"
-            autoComplete="tel"
-          />
-        </div>
-
-        <input
-          type="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="teu@email.com"
-          className="input"
-          autoComplete="email"
+        <OfferSummary
+          copy={marketing}
+          productName={selectedOffer.name}
+          description={selectedOffer.description}
+          amountInCents={selectedOffer.amountInCents}
         />
 
-        {clientSecret ? (
-          <Elements
-            stripe={stripePromise}
-            options={{
-              clientSecret,
-              appearance: { theme: "night" },
-            }}
-          >
-            <PaymentForm
-              paymentIntentId={paymentIntentId}
-              offerId={selectedOffer?.id || ""}
-              email={email}
-              phoneCountry={phoneCountry}
-              phoneNumber={phoneNumber}
+        <SocialProofBox
+          stars={marketing.testimonialStars}
+          quote={marketing.testimonialQuote}
+          attribution={marketing.testimonialAttribution}
+          socialBadge={marketing.testimonialSocialBadge}
+        />
+
+        <UrgencyStrip text={marketing.urgencyLine} />
+
+        <section className="checkoutCard" aria-labelledby="checkout-form-heading">
+          <h2 id="checkout-form-heading" className="checkoutFormHeading">
+            Dados para acesso imediato
+          </h2>
+          <p className="checkoutFormSub">
+            <strong className="checkoutFormPriceLine">
+              {new Intl.NumberFormat("pt-BR", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              }).format(selectedOffer.amountInCents / 100)}{" "}
+              mês
+            </strong>
+          </p>
+          <p className="checkoutFormIntro">
+            Escolha o seu país, adicione o seu número de WhatsApp e o seu melhor
+            email.
+          </p>
+
+          {offers.length > 1 ? (
+            <>
+              <label className="checkoutFieldLabel" htmlFor="checkout-offer">
+                Plano
+              </label>
+              <select
+                id="checkout-offer"
+                className="input"
+                value={offerId}
+                onChange={(event) => {
+                  setOfferId(event.target.value);
+                  setClientSecret("");
+                  setPaymentIntentId("");
+                  setError("");
+                }}
+              >
+                {offers.map((offer) => (
+                  <option key={offer.id} value={offer.id}>
+                    {offer.name} — {formatPriceBRL(offer.amountInCents)}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : null}
+
+          <div className="phoneRow">
+            <select
+              className="input country"
+              value={phoneCountry}
+              onChange={(event) => setPhoneCountry(event.target.value)}
+              aria-label="Indicativo"
+            >
+              {phoneCountries.map((country) => (
+                <option key={country.code} value={country.code}>
+                  {country.label}
+                </option>
+              ))}
+            </select>
+            <input
+              type="tel"
+              value={phoneNumber}
+              onChange={(event) => setPhoneNumber(event.target.value)}
+              placeholder="nº Whatsapp"
+              className="input"
+              autoComplete="tel"
             />
-          </Elements>
-        ) : (
-          <button className="button" disabled>
-            {isLoading ? "A preparar campos do cartao..." : "A carregar checkout..."}
-          </button>
-        )}
+          </div>
 
-        {error ? <p className="error">{error}</p> : null}
-      </section>
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="o seu email"
+            className="input"
+            autoComplete="email"
+          />
+
+          {clientSecret ? (
+            <Elements
+              stripe={stripePromise}
+              options={{
+                clientSecret,
+                appearance: {
+                  theme: "stripe",
+                  variables: {
+                    colorPrimary: "#059669",
+                    borderRadius: "12px",
+                  },
+                },
+              }}
+            >
+              <CheckoutPaymentForm
+                paymentIntentId={paymentIntentId}
+                offerId={selectedOffer.id}
+                email={email}
+                phoneCountry={phoneCountry}
+                phoneNumber={phoneNumber}
+                trackingBase={trackingBase}
+                guaranteeBody={marketing.guaranteeBody}
+                primaryCtaLabel={marketing.primaryCtaLabel}
+                primaryCtaLoadingLabel={marketing.primaryCtaLoadingLabel}
+              />
+            </Elements>
+          ) : (
+            <button className="button checkoutCtaButton" type="button" disabled>
+              {isLoading ? "A preparar pagamento seguro…" : "A carregar checkout…"}
+            </button>
+          )}
+
+          {error ? <p className="error">{error}</p> : null}
+
+          <SecurePaymentNotice />
+          <TrustBadges />
+        </section>
+      </div>
     </main>
-  );
-}
-
-type PaymentFormProps = {
-  paymentIntentId: string;
-  offerId: string;
-  email: string;
-  phoneCountry: string;
-  phoneNumber: string;
-};
-
-function PaymentForm({
-  paymentIntentId,
-  offerId,
-  email,
-  phoneCountry,
-  phoneNumber,
-}: PaymentFormProps) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [error, setError] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleSubmit = async () => {
-    if (!stripe || !elements) {
-      setError("Pagamento ainda a inicializar.");
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      setError("");
-
-      const digitsOnly = phoneNumber.replace(/\D/g, "");
-      if (!email.trim() || !phoneCountry || digitsOnly.length < 8) {
-        setError("Preenche email e WhatsApp validos antes de pagar.");
-        return;
-      }
-
-      const syncResponse = await fetch("/api/checkout", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          paymentIntentId,
-          offerId,
-          email,
-          phoneCountry,
-          phoneNumber: digitsOnly,
-        }),
-      });
-
-      if (!syncResponse.ok) {
-        const syncData = (await syncResponse.json().catch(() => null)) as
-          | { error?: string }
-          | null;
-        throw new Error(syncData?.error || "Falha ao validar dados do comprador.");
-      }
-
-      const result = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: `${window.location.origin}/checkout/sucesso`,
-        },
-      });
-
-      if (result.error?.message) {
-        setError(result.error.message);
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="paymentBox">
-      <PaymentElement />
-      <button className="button" onClick={handleSubmit} disabled={isSubmitting}>
-        {isSubmitting ? "A processar..." : "Pagar agora"}
-      </button>
-      {error ? <p className="error">{error}</p> : null}
-    </div>
   );
 }
