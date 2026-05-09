@@ -170,17 +170,6 @@ export default function Home() {
     }, 180);
   };
 
-  const maxStep = vslStep;
-  const goToStep = (nextStep: number) => {
-    const boundedStep = Math.max(-1, Math.min(maxStep, nextStep));
-    setSelectedIndex(null);
-    if (boundedStep === vslStep) {
-      setVslCheckoutUnlocked(!isDirectVideoSrc(vslUrl));
-      setVslVideoPlaying(false);
-    }
-    setStep(boundedStep);
-  };
-
   const enterVslStep = () => {
     setVslCheckoutUnlocked(!isDirectVideoSrc(vslUrl));
     setVslVideoPlaying(false);
@@ -243,44 +232,10 @@ export default function Home() {
     return null;
   };
 
-  const devNav = (
-    <div className="quizDevNav">
-      <button
-        className="quizDevBtn"
-        onClick={() => goToStep(step - 1)}
-        disabled={step <= -1}
-      >
-        ← Etapa anterior
-      </button>
-      <select
-        className="quizDevSelect"
-        value={step}
-        onChange={(event) => goToStep(Number(event.target.value))}
-      >
-        <option value={-1}>Intro</option>
-        {quizSteps.map((_, index) => (
-          <option key={index} value={index}>
-            Etapa {index + 1}
-          </option>
-        ))}
-        <option value={resultStep}>Resultado final</option>
-        <option value={vslStep}>VSL</option>
-      </select>
-      <button
-        className="quizDevBtn"
-        onClick={() => goToStep(step + 1)}
-        disabled={step >= maxStep}
-      >
-        Proxima etapa →
-      </button>
-    </div>
-  );
-
   if (step === -1) {
     return (
       <main className="quizRoot">
         <div className="quizCard quizCardIntro">
-          {devNav}
           <div className="quizProgress">
             <div className="quizProgressFill" style={{ width: `${progress}%` }} />
           </div>
@@ -320,7 +275,6 @@ export default function Home() {
     return (
       <main className="quizRoot">
         <div className="quizCard">
-          {devNav}
           <div className="quizProgress">
             <div className="quizProgressFill" style={{ width: `${progress}%` }} />
           </div>
@@ -423,7 +377,6 @@ export default function Home() {
     return (
       <main className="quizRoot">
         <div className="quizCard">
-          {devNav}
           <div className="quizProgress">
             <div className="quizProgressFill" style={{ width: "100%" }} />
           </div>
@@ -511,7 +464,6 @@ export default function Home() {
   return (
     <main className="quizRoot">
       <div className="quizCard">
-        {devNav}
         <div className="quizTopBar">
           <button className="quizBack" onClick={() => setStep((s) => s - 1)}>
             ←

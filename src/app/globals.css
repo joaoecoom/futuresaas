@@ -235,28 +235,6 @@ a {
   color: #0f172a;
 }
 
-.quizDevNav {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.quizDevBtn,
-.quizDevSelect {
-  width: 100%;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background: #ffffff;
-  color: #0f172a;
-  padding: 10px 12px;
-  font-size: 13px;
-}
-
-.quizDevBtn:disabled {
-  opacity: 0.45;
-}
-
 .quizTopBar {
   display: grid;
   grid-template-columns: 28px 1fr;
@@ -1432,12 +1410,6 @@ a {
   .quizOptionTime .quizOptionText {
     font-size: 16px;
     line-height: 1.2;
-  }
-
-  .quizDevBtn,
-  .quizDevSelect {
-    font-size: 12px;
-    padding: 9px 10px;
   }
 
   .quizResultMeterLabel {
